@@ -1,0 +1,187 @@
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Search & Book - Smart Parking</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+  <style>#map{height:360px;border-radius:12px;border:1px solid #1f2937;margin-top:12px}</style>
+</head>
+<body>
+  <header>
+    <h1>Find Parking</h1>
+    <nav><a href="./dashboard.html">Dashboard</a> · <a href="../index.html" onclick="localStorage.removeItem('token')">Logout</a></nav>
+  </header>
+
+  <main class="grid two">
+    <section class="card">
+      <h2>Search Lots</h2>
+      <input id="place" placeholder="Search place (Google Maps Autocomplete)">
+      <div id="map"></div>
+      <input id="city" placeholder="City (optional)">
+      <button id="searchBtn">Search</button>
+      <table id="lots"><thead><tr><th>ID</th><th>Name</th><th>City</th><th>Spaces</th><th>Rate/hr</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <section class="card">
+      <h2>Book Space</h2>
+      <form id="bookForm">
+        <input id="lotId" placeholder="Lot ID" required>
+        <input id="spaceId" placeholder="Space ID" required>
+        <label>Start <input type="datetime-local" id="start" required></label>
+        <label>End <input type="datetime-local" id="end" required></label>
+        <button type="submit">Book</button>
+      </form>
+      <div id="bookResult"></div>
+      <div id="payBox" style="margin-top:12px"></div>
+      <div id="receiptBox" style="margin-top:8px"></div>
+    </section>
+  </main>
+
+  <script>
+    const API = 'http://localhost:3000';
+    const token = localStorage.getItem('token');
+    if (!token) location.href = '../index.html';
+
+    document.getElementById('searchBtn').onclick = async () => {
+      const city = document.getElementById('city').value;
+      const res = await fetch(API+'/api/lots'+(city?('?city='+encodeURIComponent(city)):""));
+      const data = await res.json();
+      const tbody = document.querySelector('#lots tbody');
+      tbody.innerHTML = '';
+      data.forEach(l => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>'+l.lot_id+'</td><td>'+l.lot_name+'</td><td>'+ (l.city||'') +'</td><td>'+l.total_spaces+'</td><td>'+l.hourly_rate+'</td>';
+        tbody.appendChild(tr);
+      });
+    };
+
+    document.getElementById('bookForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        lot_id: Number(lotId.value),
+        space_id: Number(spaceId.value),
+        start_time: start.value,
+        end_time: end.value
+      };
+      const res = await fetch(API+'/api/reservations', {method:'POST', headers:{'Content-Type':'application/json', 'Authorization':'Bearer '+token}, body: JSON.stringify(body)});
+      const data = await res.json();
+      if (data.reservation_id) {
+        bookResult.innerHTML = '<p>Reservation #'+data.reservation_id+' created. Amount: ₹'+data.amount+'</p>' + (data.qr?('<img class="qr" src="'+data.qr+'"/>') : '');
+      } else {
+        bookResult.textContent = data.error || 'Failed';
+      }
+    });
+  </script>
+
+<script src="../assets/socket-client.js"></script>
+<script>
+  const API = 'http://localhost:3000';
+  const token = localStorage.getItem('token');
+  if (!token) location.href = '../index.html';
+
+  let map, autocomplete, marker;
+
+  function initGoogle() {
+    try {
+      const input = document.getElementById('place');
+      if (window.google && google.maps) {
+        map = new google.maps.Map(document.getElementById('map'), { center: {lat:28.6139, lng:77.2090}, zoom: 12 });
+        autocomplete = new google.maps.places.Autocomplete(input);
+        autocomplete.addListener('place_changed', () => {
+          const p = autocomplete.getPlace();
+          if (!p.geometry) return;
+          const loc = p.geometry.location;
+          map.setCenter(loc);
+          map.setZoom(14);
+          if (marker) marker.setMap(null);
+          marker = new google.maps.Marker({ position: loc, map });
+          // You could use p.address_components to auto-fill city filter if needed
+        });
+      } else {
+        document.getElementById('map').innerHTML = "<p style='padding:8px'>Google Maps not configured. Add your API key.</p>";
+      }
+    } catch (e) {}
+  }
+  initGoogle();
+
+  // listen to realtime updates
+  window.addEventListener('space_update', (e) => {
+    // simple toast
+    const d = e.detail;
+    console.log('Realtime availability update', d);
+  });
+
+  document.getElementById('searchBtn').onclick = async () => {
+    const city = document.getElementById('city').value;
+    const res = await fetch(API+'/api/lots'+(city?('?city='+encodeURIComponent(city)):""));
+    const data = await res.json();
+    const tbody = document.querySelector('#lots tbody');
+    tbody.innerHTML = '';
+    data.forEach(l => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+l.lot_id+'</td><td>'+l.lot_name+'</td><td>'+ (l.city||'') +'</td><td>'+l.total_spaces+'</td><td>'+l.hourly_rate+'</td>';
+      tbody.appendChild(tr);
+    });
+  };
+
+  document.getElementById('bookForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      lot_id: Number(lotId.value),
+      space_id: Number(spaceId.value),
+      start_time: start.value,
+      end_time: end.value
+    };
+    const res = await fetch(API+'/api/reservations', {method:'POST', headers:{'Content-Type':'application/json', 'Authorization':'Bearer '+token}, body: JSON.stringify(body)});
+    const data = await res.json();
+    if (data.reservation_id) {
+      bookResult.innerHTML = '<p>Reservation #'+data.reservation_id+' created. Amount: ₹'+data.amount+'</p>' + (data.qr?('<img class="qr" src="'+data.qr+'"/>') : '');
+      payBox.innerHTML = '<button id="payBtn">Pay Now</button>';
+      receiptBox.innerHTML = '';
+
+      document.getElementById('payBtn').onclick = async () => {
+        const r = await fetch(API+'/api/payments/create-order', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body: JSON.stringify({reservation_id: data.reservation_id})});
+        const order = await r.json();
+        // If Razorpay keys missing, mock flow:
+        if (order.mock) {
+          await fetch(API+'/api/payments/mark-paid', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body: JSON.stringify({reservation_id: data.reservation_id, order_id: order.id})});
+          receiptBox.innerHTML = '<a target="_blank" href="'+API+'/api/payments/receipt/'+data.reservation_id+'">Download Receipt PDF</a>';
+          payBox.innerHTML = '<p>Payment recorded (mock).</p>';
+          return;
+        }
+        // Real Razorpay checkout
+        const opts = {
+          key: '%RAZORPAY_KEY_ID%',
+          amount: order.amount,
+          currency: order.currency,
+          name: 'Smart Parking',
+          description: 'Reservation #'+data.reservation_id,
+          order_id: order.id,
+          handler: async function (resp) {
+            await fetch(API+'/api/payments/mark-paid', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body: JSON.stringify({reservation_id: data.reservation_id, order_id: order.id, payment_id: resp.razorpay_payment_id, signature: resp.razorpay_signature})});
+            receiptBox.innerHTML = '<a target="_blank" href="'+API+'/api/payments/receipt/'+data.reservation_id+'">Download Receipt PDF</a>';
+            payBox.innerHTML = '<p>Payment successful.</p>';
+          },
+          prefill: {},
+          theme: {}
+        };
+        if (window.Razorpay) {
+          new Razorpay(opts).open();
+        } else {
+          alert('Razorpay script not loaded. Use mock flow or add Razorpay checkout script.');
+        }
+      };
+    } else {
+      bookResult.textContent = data.error || 'Failed';
+    }
+  });
+</script>
+<!-- Razorpay Checkout (optional, for real payments) -->
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<!-- Google Maps JS (optional). Replace YOUR_GOOGLE_MAPS_API_KEY -->
+<script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places&callback=initGoogle"></script>
+
+</body>
+</html>

@@ -1,0 +1,107 @@
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - Smart Parking</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Admin Panel</h1>
+    <nav><a href="./dashboard.html">Dashboard</a> · <a href="./search.html">Find Parking</a></nav>
+  </header>
+
+  <main class="grid two">
+    <section class="card">
+      <h2>Create Lot</h2>
+      <form id="lotForm">
+        <input id="lot_name" placeholder="Lot name" required>
+        <input id="address" placeholder="Address">
+        <input id="city" placeholder="City">
+        <input id="state" placeholder="State">
+        <input id="latitude" placeholder="Latitude">
+        <input id="longitude" placeholder="Longitude">
+        <input id="total_spaces" type="number" placeholder="Total spaces">
+        <input id="hourly_rate" type="number" step="0.01" placeholder="Hourly rate">
+        <button type="submit">Create</button>
+      </form>
+      <div id="lotResult"></div>
+    </section>
+
+    <section class="card">
+      <h2>Add Spaces</h2>
+      <form id="spaceForm">
+        <input id="lotId" type="number" placeholder="Lot ID" required>
+        <textarea id="spaces" rows="5" placeholder='One per line, like: A1,regular,1st_floor'></textarea>
+        <button type="submit">Add Spaces</button>
+      </form>
+      <div id="spaceResult"></div>
+    </section>
+
+    <section class="card">
+      <h2>Analytics</h2>
+      <button id="refresh">Refresh</button>
+      <table id="counters"><thead><tr><th>Users</th><th>Lots</th><th>Spaces</th><th>Reservations</th></tr></thead><tbody><tr><td>-</td><td>-</td><td>-</td><td>-</td></tr></tbody></table>
+      <h3>Revenue by Lot</h3>
+      <table id="revenue"><thead><tr><th>Lot ID</th><th>Revenue</th><th>Payments</th></tr></thead><tbody></tbody></table>
+    </section>
+  </main>
+
+  <script src="../assets/socket-client.js"></script>
+  <script>
+    const API = 'http://localhost:3000';
+    const token = localStorage.getItem('token');
+    if (!token) location.href = '../index.html';
+
+    document.getElementById('lotForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        lot_name: lot_name.value,
+        address: address.value,
+        city: city.value,
+        state: state.value,
+        latitude: latitude.value ? Number(latitude.value) : null,
+        longitude: longitude.value ? Number(longitude.value) : null,
+        total_spaces: total_spaces.value ? Number(total_spaces.value) : 0,
+        hourly_rate: hourly_rate.value ? Number(hourly_rate.value) : 0
+      };
+      const res = await fetch(API+'/api/lots', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body: JSON.stringify(body)});
+      const data = await res.json();
+      lotResult.textContent = data.lot_id ? ('Created lot '+data.lot_id) : (data.error||'Failed');
+    });
+
+    document.getElementById('spaceForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const lines = spaces.value.split(/\n+/).map(s => s.trim()).filter(Boolean);
+      const arr = lines.map(line => {
+        const [space_number, space_type, floor_level] = line.split(',').map(x => (x||'').trim());
+        return { space_number, space_type: space_type || 'regular', floor_level: floor_level || null };
+      });
+      const res = await fetch(API+'/api/lots/'+Number(lotId.value)+'/spaces', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body: JSON.stringify({spaces: arr})});
+      const data = await res.json();
+      spaceResult.textContent = data.success ? 'Spaces added' : (data.error||'Failed');
+    });
+
+    async function refreshAnalytics() {
+      const c = await fetch(API+'/api/payments/analytics/counters', { headers: {'Authorization':'Bearer '+token} });
+      const counters = await c.json();
+      const tbody = document.querySelector('#counters tbody');
+      tbody.innerHTML = '<tr><td>'+counters.users+'</td><td>'+counters.lots+'</td><td>'+counters.spaces+'</td><td>'+counters.reservations+'</td></tr>';
+
+      const r = await fetch(API+'/api/payments/analytics/revenue-by-lot', { headers: {'Authorization':'Bearer '+token} });
+      const rev = await r.json();
+      const tbody2 = document.querySelector('#revenue tbody');
+      tbody2.innerHTML = '';
+      rev.forEach(x => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>'+x.lot_id+'</td><td>₹'+x.revenue+'</td><td>'+x.payments_count+'</td>';
+        tbody2.appendChild(tr);
+      });
+    }
+    document.getElementById('refresh').onclick = refreshAnalytics;
+    refreshAnalytics();
+  </script>
+</body>
+</html>

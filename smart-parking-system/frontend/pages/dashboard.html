@@ -1,0 +1,44 @@
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard - Smart Parking</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Dashboard</h1>
+    <nav><a href="./search.html">Find Parking</a> · <a href="./admin.html">Admin</a> · <a href="#" id="logout">Logout</a></nav>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>My Reservations</h2>
+      <table id="reservations"><thead><tr><th>ID</th><th>Lot</th><th>Space</th><th>Start</th><th>End</th><th>Status</th><th>QR</th></tr></thead><tbody></tbody></table>
+    </section>
+  </main>
+
+  <script>
+    const API = 'http://localhost:3000';
+    const token = localStorage.getItem('token');
+    if (!token) location.href = '../index.html';
+
+    document.getElementById('logout').onclick = () => { localStorage.removeItem('token'); location.href = '../index.html'; };
+
+    async function loadReservations() {
+      const res = await fetch(API+'/api/reservations', { headers: { 'Authorization': 'Bearer ' + token } });
+      const data = await res.json();
+      const tbody = document.querySelector('#reservations tbody');
+      tbody.innerHTML = '';
+      data.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>'+r.reservation_id+'</td><td>'+r.lot_id+'</td><td>'+r.space_id+'</td><td>'+r.start_time+'</td><td>'+r.end_time+'</td><td>'+r.status+'</td><td>'+(r.qr_code?('<img class="qr" src="'+r.qr_code+'"/>'):'-')+'</td>';
+        tbody.appendChild(tr);
+      });
+    }
+    loadReservations();
+  </script>
+</body>
+</html>
