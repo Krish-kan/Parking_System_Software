@@ -1,7 +1,6 @@
-
+// backend/server.js
 const express = require('express');
 const http = require('http');
-
 const cors = require('cors');
 const dotenv = require('dotenv');
 dotenv.config();
@@ -30,5 +29,6 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/qr', qrRoutes);
 
+// Listen on the port Render provides (process.env.PORT)
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
